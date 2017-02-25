@@ -7,12 +7,12 @@ import project.model.netflix.UserRating;
 
 public class NetflixCollaborativeLearner extends CollaborativeFilterLearner {
 
-    private final int totalRowCount;
-    private int rowsProcessed;
-    private CollaborativeFilter currentFilter;
-    private String state = "INIT";
+    protected final int totalRowCount;
+    protected int rowsProcessed;
+    protected CollaborativeFilter currentFilter;
+    protected String state = "INIT";
 
-    private final List<UserRating> records;
+    protected final List<UserRating> records;
 
     public NetflixCollaborativeLearner(final List<UserRating> records) {
         this.records = records;

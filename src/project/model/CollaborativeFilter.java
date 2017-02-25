@@ -18,16 +18,17 @@ import project.model.netflix.UserRating;
 
 public class CollaborativeFilter {
 
-    private final Map<MovieId, Set<UserRating>> ratingsByMovie;
-    private final Map<UserId, Map<MovieId, UserRating>> ratingsByUser;
-    private final Map<UserId, Set<MovieId>> moviesByUser;
-    private final Map<UserId, Double> averageUserVotes;
+    protected final Map<MovieId, Set<UserRating>> ratingsByMovie;
+    protected final Map<UserId, Map<MovieId, UserRating>> ratingsByUser;
+    protected final Map<UserId, Set<MovieId>> moviesByUser;
+    protected final Map<UserId, Double> averageUserVotes;
 
-    private int averagesRowCount = 0;
-    private int averagesRowStatus = 0;
-    private int testRowCount = 0;
-    private int testRowStatus = 0;
-    private boolean completionStatus = false;
+    protected int averagesRowCount = 0;
+    protected int averagesRowStatus = 0;
+    protected int testRowCount = 0;
+    protected int testRowStatus = 0;
+    protected boolean completionStatus = false;
+    protected int maxUserId = 0;
 
     private AccuracyMeasurement accuracy = new AccuracyMeasurement("default");
 
@@ -64,6 +65,11 @@ public class CollaborativeFilter {
             final Set<MovieId> movieSet = new HashSet<MovieId>();
             movieSet.add(rating.getMovieId());
             this.moviesByUser.put(rating.getUserId(), movieSet);
+        }
+
+        // add to the max id, if necessary
+        if (rating.getUserId().getValue() > this.maxUserId) {
+            this.maxUserId = rating.getUserId().getValue();
         }
     }
 
@@ -107,7 +113,7 @@ public class CollaborativeFilter {
     // Deal with calculating weights between two user ids
     //
 
-    private Double calculateUserPairWeight(final UserId activeUser, final UserId otherUser) {
+    public Double calculateUserPairWeight(final UserId activeUser, final UserId otherUser) {
         // we need to sum up three values: activeDiff * otherDiff, activeDiff ^ 2, otherDiff ^ 2
         Double sumNumerator = 0.0;
         Double sumActiveDiffSquared = 0.0;
@@ -260,5 +266,9 @@ public class CollaborativeFilter {
 
     public AccuracyMeasurement getAccuracy() {
         return this.accuracy;
+    }
+
+    public int getMaxUserId() {
+        return this.maxUserId;
     }
 }
