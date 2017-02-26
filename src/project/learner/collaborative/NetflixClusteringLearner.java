@@ -1,13 +1,18 @@
 package project.learner.collaborative;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.commons.math3.linear.Array2DRowRealMatrix;
 import org.apache.commons.math3.linear.EigenDecomposition;
 import org.apache.commons.math3.linear.RealMatrix;
+import org.apache.commons.math3.linear.RealVector;
+import org.apache.commons.math3.ml.clustering.KMeansPlusPlusClusterer;
 
 import project.model.ClusteredFilter;
+import project.model.ReducedUserProfile;
 import project.model.identifiers.KValue;
+import project.model.identifiers.UserId;
 import project.model.netflix.UserRating;
 
 public class NetflixClusteringLearner extends NetflixCollaborativeLearner {
@@ -52,7 +57,9 @@ public class NetflixClusteringLearner extends NetflixCollaborativeLearner {
                                            final int k) {
         final ClusteredFilter filter = this.currentFilter;
         final int n = adjacencyMatrix.length;
+        System.out.println(String.format("A[%d][%d] = %.3f", n, n, adjacencyMatrix[n-1][n-1]));
 
+        System.out.println(String.format("Building diagonal matrix."));
         final double[] diagonalMatrix = new double[n];
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < n; j++) {
@@ -60,7 +67,10 @@ public class NetflixClusteringLearner extends NetflixCollaborativeLearner {
             }
             diagonalMatrix[i] = 1.0 / Math.sqrt(diagonalMatrix[i]);
         }
+        System.out.println(String.format("Built diagonal matrix of dimensions %dx%d.", n, n));
+        System.out.println(String.format("D[%d][%d] = %.3f", n, n, diagonalMatrix[n-1]));
 
+        System.out.println(String.format("Building L matrix."));
         final double[][] lMatrix = new double[n][n];
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < i; j++) {
@@ -68,23 +78,48 @@ public class NetflixClusteringLearner extends NetflixCollaborativeLearner {
                 lMatrix[j][i] = lMatrix[i][j];
             }
         }
+        System.out.println(String.format("Built L matrix of dimensions %dx%d.", n, n));
 
+        System.out.println(String.format("Decomposing L matrix."));
         final RealMatrix lRealMatrix = new Array2DRowRealMatrix(lMatrix);
+        System.out.println(String.format("L[%d][%d] = %.3f", n, n, lRealMatrix.getEntry(n-1, n-1)));
         final EigenDecomposition decomposition = new EigenDecomposition(lRealMatrix);
+        System.out.println(String.format("Decomposed L matrix."));
 
-        //final double[][] eigenvectors = eigen.getEigenVectors();
-        //for (int i = 0; i < n; i++) {
-        //    Math.unitize2(Y[i]);
-        //}
+        // get the first k eigenvectors
+        System.out.println(String.format("Identifiying eigenvectors."));
+        double[][] eigenvectors = new double[n][k];
+        for (int i = 0; i < k; i++) {
+            final RealVector vector = decomposition.getEigenvector(i);
+            for (int j = 0; j < n; j++) {
+                eigenvectors[j][i] = vector.getEntry(j);
+            }
+        }
+        final RealMatrix eigenMatrix = new Array2DRowRealMatrix(eigenvectors);
+        System.out.println(String.format("Identified %d eigenvectors.", k));
 
-        /*
-         * TODO
+        // calculate the matrix Z
+        System.out.println(String.format("Reducing dimensions of L->Z."));
+        final RealMatrix zMatrix = lRealMatrix.multiply(eigenMatrix);
+        System.out.println(String.format("Reduced dimensions to %dx%d", n, k));
 
-        final KMeans kmeans = new KMeans(Y, k);
-        distortion = kmeans.distortion;
-        y = kmeans.getClusterLabel();
-        size = kmeans.getClusterSize();
-        */
+        System.out.println(String.format("Building user profiles."));
+        final List<ReducedUserProfile> userProfiles = new ArrayList<ReducedUserProfile>();
+        for (int i = 0; i < n; i++) {
+            double[] reducedPoints = new double[k];
+            for (int j = 0; j < k; j++) {
+                reducedPoints[j] = zMatrix.getEntry(i, j);
+            }
+            userProfiles.add(new ReducedUserProfile(UserId.valueOf(i), reducedPoints));
+        }
+        System.out.println(String.format("Built %d profiles.", n));
+
+        // cluster the user profiles
+        System.out.println(String.format("Clustering users."));
+        final KMeansPlusPlusClusterer clusterer =
+                new KMeansPlusPlusClusterer<ReducedUserProfile>(this.kValue.getValue(), 100);
+        filter.setCentroids(clusterer.cluster(userProfiles));
+        System.out.println(String.format("Finished clustering users."));
 
         return filter;
     }

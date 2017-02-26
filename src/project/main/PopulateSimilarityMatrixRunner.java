@@ -7,7 +7,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
@@ -29,6 +31,7 @@ import project.model.netflix.UserRating;
 public class PopulateSimilarityMatrixRunner {
 
     private static final String TRAINING_RATINGS_FILE_FLAG = "f";
+    private static final String USER_COUNT_FLAG = "u";
 
     public static void main(String[] args) {
         try {
@@ -60,6 +63,7 @@ public class PopulateSimilarityMatrixRunner {
     private static Options initOptions() {
         final Options options = new Options();
         options.addOption(TRAINING_RATINGS_FILE_FLAG, true, "the movie input file to process");
+        options.addOption(USER_COUNT_FLAG, true, "the number of users to process");
         return options;
     }
 
@@ -72,6 +76,9 @@ public class PopulateSimilarityMatrixRunner {
         if (!cmd.hasOption(TRAINING_RATINGS_FILE_FLAG)) {
             throw new IllegalArgumentException("No training input file provided.");
         }
+        if (!cmd.hasOption(USER_COUNT_FLAG)) {
+            throw new IllegalArgumentException("No user count provided.");
+        }
     }
 
     private static CollaborativeFilter parseInputData(final CommandLine cmd)
@@ -80,7 +87,10 @@ public class PopulateSimilarityMatrixRunner {
         final String inputFileLoc = cmd.getOptionValue(TRAINING_RATINGS_FILE_FLAG);
         System.out.println(String.format("Reading {%s}.", inputFileLoc));
 
+        final Integer userCount = Integer.parseInt(cmd.getOptionValue(USER_COUNT_FLAG));
+
         // load in the file
+        final Map<UserId, Integer> userIdTruncationMap = new HashMap<UserId, Integer>();
         final List<UserRating> records = new ArrayList<UserRating>();
         final File inputFile = new File(inputFileLoc);
         final CSVParser parser = CSVParser.parse(inputFile, Charset.forName("UTF-8"), CSVFormat.DEFAULT);
@@ -88,7 +98,12 @@ public class PopulateSimilarityMatrixRunner {
             final MovieId movieId = MovieId.valueOf( Integer.parseInt( csvRecord.get(0) ) );
             final UserId userId = UserId.valueOf( Integer.parseInt( csvRecord.get(1) ) );
             final Double rating = Double.parseDouble( csvRecord.get(2) );
-            records.add( new UserRating( userId, movieId, rating ) );
+            if (userIdTruncationMap.size() <= userCount || userIdTruncationMap.containsKey(userId)) {
+                final Integer nextId = userIdTruncationMap.getOrDefault(userId, userIdTruncationMap.size());
+
+                records.add(new UserRating(UserId.valueOf(nextId), movieId, rating));
+                userIdTruncationMap.put(userId, nextId);
+            }
         }
         System.out.println(String.format("File {%s} parsed successfully.", inputFileLoc));
 
@@ -103,16 +118,17 @@ public class PopulateSimilarityMatrixRunner {
     private static void outputSimilarityMatrix(final CollaborativeFilter filter)
         throws Exception
     {
-        final Path filepath = Files.createFile(Paths.get("netflix_data/similarity-matrix.txt"));
-        final BufferedWriter writer = Files.newBufferedWriter(filepath);
-
-        final Path degreePath = Files.createFile(Paths.get("netflix_data/degree-vector.txt"));
-        final BufferedWriter degreeWriter = Files.newBufferedWriter(degreePath);
-
         final int maxUserId = filter.getMaxUserId();
 
+        Path filepath = Paths.get(String.format("netflix_data/similarity-matrix-%d.txt", maxUserId));
+        Files.deleteIfExists(filepath);
+        filepath = Files.createFile(filepath);
+        final BufferedWriter writer = Files.newBufferedWriter(filepath);
+
         final double[][] similarityMatrix = new double[maxUserId][maxUserId];
-        final double[] degreeVector = new double[maxUserId];
+        final int[] degreeVector = new int[maxUserId];
+
+        System.out.println(String.format("Starting to calculate similarity matrix."));
 
         for (int row = 0; row < maxUserId; row++) {
             int degree = 0;
@@ -135,12 +151,13 @@ public class PopulateSimilarityMatrixRunner {
                 }
             }
             degreeVector[row] = degree;
+            System.out.println(String.format("Calculated row %d successfully.", row));
         }
 
         for (int row = 0; row < maxUserId; row++) {
             final StringBuilder builder = new StringBuilder();
             for (int col = 0; col < maxUserId; col++) {
-                builder.append(similarityMatrix[row][col]);
+                builder.append(String.format("%.3f",similarityMatrix[row][col]));
                 if (col < maxUserId - 1) {
                     builder.append(",");
                 }
@@ -149,13 +166,8 @@ public class PopulateSimilarityMatrixRunner {
             writer.write(String.format("%s\n", builder.toString()));
         }
 
-        System.out.println("Wrote output file {netflix_data/similarity-matrix.txt} successfully.");
-
-        for (int row = 0; row < maxUserId; row++) {
-            // output this row of the vector
-            degreeWriter.write(String.format("%s\n", degreeVector[row]));
-        }
-
-        System.out.println("Wrote output file {netflix_data/degree-vector.txt} successfully.");
+        writer.flush();
+        writer.close();
+        System.out.println(String.format("Wrote output file {%s} successfully.", filepath.getFileName().toString()));
     }
 }
